@@ -48,17 +48,13 @@ func main() {
 		os.Exit(0)
 	}()
 
-	go agent.Connect()
-
-	// event handler
-	go runAgent(agent)
+	eventChan := agent.Start()
+	logger.Info("Agent started")
+	go agent.Run()
 
 	// block forever
-	select {}
-}
-
-func runAgent(agent *hone.Agent) {
-	// run agent
-	go agent.Run()
-	logger.Info("Agent started")
+	for {
+		evt := <-eventChan
+		fmt.Printf("got event %s\n", evt)
+	}
 }
