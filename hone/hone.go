@@ -63,8 +63,10 @@ type Agent struct {
 	// mapping of tgid -> last exec event
 	ExecEvents map[int]*CaptureEvent
 
-	// pid of thread communicating with collector
-	CommunicationPID int
+	// proc info of agent
+	TGID int
+
+	connectLastEventCount uint64
 }
 
 func NewAgent(serverAddr string, serverPort uint) *Agent {
@@ -73,6 +75,7 @@ func NewAgent(serverAddr string, serverPort uint) *Agent {
 	// initialization
 	agent.SockEvents = make(map[uint64]*CaptureEvent)
 	agent.ExecEvents = make(map[int]*CaptureEvent)
+	agent.TGID = os.Getpid() // trust me here
 
 	agent.ServerAddress = serverAddr
 	agent.ServerPort = serverPort
@@ -85,10 +88,14 @@ func (agent *Agent) Connect() {
 		return
 	}
 
+	// don't try again until we see more events
+	if agent.connectLastEventCount != agent.EventCount {
+		agent.connectLastEventCount = agent.EventCount
+		return
+	}
+
 	// try connecting to collection server
 	server := agent.ServerAddress + ":" + strconv.FormatUint(uint64(agent.ServerPort), 10)
-
-	agent.CommunicationPID = os.Getpid()
 
 	agent.Connecting = true
 	conn, err := net.Dial("tcp", server)
