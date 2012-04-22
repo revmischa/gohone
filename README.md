@@ -22,5 +22,8 @@ sudo modprobe honeevent
 Make sure you have Go 1.0 installed
 
 ### Run:
-`nc -l -p 7100`
-`sudo go run agent.go --server localhost`
+```
+nc -l -p 7100
+sudo go run agent.go --server localhost
+```
+
