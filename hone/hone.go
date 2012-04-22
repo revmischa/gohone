@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strconv"
+	"net"
 )
 
 const (
@@ -50,7 +51,35 @@ type Agent struct {
 	CaptureFile *os.File
 	Stopped bool
 	EventCount uint64
+	
 	ServerAddress string
+	ServerPort uint
+	ServerConn net.Conn
+	ConnectedToServer bool
+	Connecting bool
+}
+
+func (agent *Agent) Connect() {
+	if agent.Connecting {
+		return
+	}
+	
+	// try connecting to collection server
+	server := agent.ServerAddress + ":" + strconv.FormatUint(uint64(agent.ServerPort), 10)
+
+	agent.Connecting = true
+	conn, err := net.Dial("tcp", server)
+	
+	if err != nil {
+		log.Printf(fmt.Sprintf("Failed to connect to %s: %s\n", server, err))
+		agent.ConnectedToServer = false
+		agent.Connecting = false
+		return
+	}
+	
+	agent.ServerConn = conn
+	agent.ConnectedToServer = true
+	agent.Connecting = false
 }
 
 // open kernel hone event module
