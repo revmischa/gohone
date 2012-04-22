@@ -4,6 +4,7 @@ import (
 	"./hone"
 	"flag"
 	"fmt"
+	"log"
 	"log/syslog"
 	"os"
 	"os/signal"
@@ -16,8 +17,7 @@ func main() {
 	var err error
 	logger, err = syslog.New(syslog.LOG_DEBUG, "hone-agent")
 	if err != nil {
-		fmt.Printf("Error connecting to syslog: %s\n", err)
-		os.Exit(1)
+		log.Panicf("Error connecting to syslog: %s\n", err)
 	}
 
 	// command-line flags
@@ -26,8 +26,7 @@ func main() {
 	flag.Parse()
 
 	if len(*serverAddr) == 0 {
-		fmt.Println("Destination server is required")
-		os.Exit(1)
+		log.Fatalln("Destination server is required")
 	}
 
 	// create agent

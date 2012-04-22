@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"log/syslog"
 	"net"
 	"os"
 	"regexp"
@@ -54,6 +55,8 @@ type CaptureEvent struct {
 
 // class that reads and dispatches capture events
 type Agent struct {
+	Logger *syslog.Writer
+	
 	// reading events from here
 	CaptureFile *os.File
 
@@ -99,6 +102,13 @@ func NewAgent(serverAddr string, serverPort uint) *Agent {
 	agent.SockEvents = make(map[uint64]*CaptureEvent)
 	agent.ExecEvents = make(map[int]*CaptureEvent)
 	agent.TGID = os.Getpid() // trust me here
+	
+	logger, err := syslog.New(syslog.LOG_DEBUG, "hone-agent")
+	if err != nil {
+		log.Panicf("Error connecting to syslog: %s\n", err)
+	}
+
+	agent.Logger = logger
 
 	agent.ServerAddress = serverAddr
 	agent.ServerPort = serverPort
@@ -124,11 +134,13 @@ func (agent *Agent) Connect() {
 	conn, err := net.Dial("tcp", server)
 
 	if err != nil {
-		log.Printf(fmt.Sprintf("Failed to connect to %s: %s\n", server, err))
+		agent.Logger.Debug(fmt.Sprintf("Failed to connect to %s: %s", server, err))
 		agent.ConnectedToServer = false
 		agent.Connecting = false
 		return
 	}
+
+	agent.Logger.Debug(fmt.Sprintf("Connected to %s", server))
 
 	agent.ServerConn = conn
 	agent.ConnectedToServer = true
