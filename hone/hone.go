@@ -78,7 +78,7 @@ type Agent struct {
 	ServerPort        uint
 	ServerConn        net.Conn
 	ConnectedToServer bool
-	Connecting        bool
+	ConnectEventChan  chan bool
 
 	// TRACKING EVENT/CONNECTION/PROCESS/SOCKET STATE
 	// mapping of sockfd -> last sock event
@@ -101,6 +101,7 @@ func NewAgent(serverAddr string, serverPort uint) *Agent {
 	// initialization
 	agent.SockEvents = make(map[uint64]*CaptureEvent)
 	agent.ExecEvents = make(map[int]*CaptureEvent)
+	agent.ConnectEventChan = make(chan bool)
 	agent.TGID = os.Getpid() // trust me here
 	
 	logger, err := syslog.New(syslog.LOG_DEBUG, "hone-agent")
@@ -117,26 +118,29 @@ func NewAgent(serverAddr string, serverPort uint) *Agent {
 }
 
 func (agent *Agent) Connect() {
-	if agent.Connecting {
-		return
-	}
+	agent.ConnectEventChan <- true
+}
 
+func (agent *Agent) tryConnect() {
 	// don't try again until we see more events
 	if agent.connectLastEventCount != agent.EventCount {
 		agent.connectLastEventCount = agent.EventCount
 		return
 	}
 
+	if agent.ConnectedToServer {
+		return
+	}
+
 	// try connecting to collection server
 	server := agent.ServerAddress + ":" + strconv.FormatUint(uint64(agent.ServerPort), 10)
 
-	agent.Connecting = true
+	agent.CloseConnection()
 	conn, err := net.Dial("tcp", server)
 
 	if err != nil {
 		agent.Logger.Debug(fmt.Sprintf("Failed to connect to %s: %s", server, err))
 		agent.ConnectedToServer = false
-		agent.Connecting = false
 		return
 	}
 
@@ -144,7 +148,6 @@ func (agent *Agent) Connect() {
 
 	agent.ServerConn = conn
 	agent.ConnectedToServer = true
-	agent.Connecting = false
 
 	// send last HEAD event if we have it, to identify outselves
 	if agent.LastHeadEvent != nil {
@@ -154,6 +157,14 @@ func (agent *Agent) Connect() {
 
 // opens capture, connects to server, returns event channel
 func (agent *Agent) Start() EventChannel {
+	// listen for connect events
+	go func() {
+		for {
+			<-agent.ConnectEventChan
+			agent.tryConnect()
+		}
+	}()
+
 	// open capture
 	agent.OpenCaptureFile()
 
@@ -170,7 +181,7 @@ func (agent *Agent) Start() EventChannel {
 			reader := bufio.NewReader(agent.CaptureFile)
 			line, isPrefix, err := reader.ReadLine()
 			if err != nil {
-				log.Panicf("Error reading capture file: %s\n", err)
+				log.Fatalf("Error reading capture file: %s\n", err)
 				continue
 			}
 
@@ -208,6 +219,17 @@ func (agent *Agent) Run() {
 
 func (agent *Agent) Stop() {
 	agent.Stopped = true
+	agent.CloseConnection()
+}
+
+func (agent *Agent) CloseConnection() {
+	agent.ConnectedToServer = false
+
+	if agent.ServerConn != nil {
+		agent.ServerConn.Close()
+	}
+
+	agent.ServerConn = nil
 }
 
 func (agent *Agent) handleEvent(evt *CaptureEvent) {
@@ -244,12 +266,17 @@ func (agent *Agent) SendEventToServer(evt *CaptureEvent) {
 	// encode as JSON
 	jsonStr, err := json.Marshal(evt)
 	if err != nil {
-		log.Print(err.Error())
+		agent.Logger.Debug(err.Error())
 		return
 	}
 
 	// send newline-terminated JSON event to server
-	fmt.Fprintln(agent.ServerConn, string(jsonStr))
+	_, err = fmt.Fprintln(agent.ServerConn, string(jsonStr))
+	if err != nil {
+		agent.Logger.Info(fmt.Sprintf("Failed writing event to server: %s\n", err))
+		agent.CloseConnection()
+		agent.Connect()
+	}
 }
 
 // open kernel hone event module
