@@ -46,16 +46,17 @@ type CaptureEvent struct {
 // capture event type
 
 // class that reads and dispatches capture events
-type Collector struct {
+type Agent struct {
 	CaptureFile *os.File
 	Stopped bool
 	EventCount uint64
+	ServerAddress string
 }
 
 // open kernel hone event module
-func (collector *Collector) OpenCaptureFile() {
+func (agent *Agent) OpenCaptureFile() {
 	var err error
-	collector.CaptureFile, err = os.Open(capFilePath)
+	agent.CaptureFile, err = os.Open(capFilePath)
 
 	// TODO: check if module is loaded
 
@@ -64,22 +65,22 @@ func (collector *Collector) OpenCaptureFile() {
 	}
 }
 
-func (collector *Collector) CloseCaptureFile() {
-	collector.CaptureFile.Close()
+func (agent *Agent) CloseCaptureFile() {
+	agent.CaptureFile.Close()
 }
 
 // opens capture, starts sending events to event channel
-func (collector *Collector) Run() EventChan {
+func (agent *Agent) Run() EventChan {
 	// open capture
-	collector.OpenCaptureFile()
+	agent.OpenCaptureFile()
 
 	// create a channel to receive capture events
 	ec := make(EventChan)
 
 	// start reading file
 	go func() {
-		for (! collector.Stopped) {
-			reader := bufio.NewReader(collector.CaptureFile)
+		for (! agent.Stopped) {
+			reader := bufio.NewReader(agent.CaptureFile)
 			line, isPrefix, err := reader.ReadLine()
 			if err != nil {
 				log.Panicf("Error reading capture file: %s\n", err)
@@ -92,10 +93,10 @@ func (collector *Collector) Run() EventChan {
 				continue
 			}
 
-			collector.EventCount++
+			agent.EventCount++
 
 			// parse input
-			evt := collector.ParseHoneEventLine(line)
+			evt := agent.ParseHoneEventLine(line)
 			if (evt == nil) {
 				continue
 			}
@@ -104,18 +105,18 @@ func (collector *Collector) Run() EventChan {
 			ec <- evt
 		}
 
-		collector.CloseCaptureFile()
+		agent.CloseCaptureFile()
 	}()
 
 	return ec
 }
 
-func (collector *Collector) Stop() {
-	collector.Stopped = true
+func (agent *Agent) Stop() {
+	agent.Stopped = true
 }
 
 // parses a line from /dev/honet into a CaptureEvent
-func (collector *Collector) ParseHoneEventLine(lineBytes []byte) *CaptureEvent {
+func (agent *Agent) ParseHoneEventLine(lineBytes []byte) *CaptureEvent {
 	line := string(lineBytes)
 
 	parseSuccess := false
@@ -193,14 +194,14 @@ func (collector *Collector) ParseHoneEventLine(lineBytes []byte) *CaptureEvent {
 			}
 			
 		default:
-			if (collector.EventCount > 10) {
+			if (agent.EventCount > 10) {
 				log.Printf("unhandled hone event type: %s\n", eventType)
 			}
 		}
 	}
 
 	if (! parseSuccess) {
-		if (collector.EventCount > 10) {
+		if (agent.EventCount > 10) {
 			log.Printf("Failed to parse line '%s': %s\n", line, err)
 		}
 	}
