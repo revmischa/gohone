@@ -53,7 +53,7 @@ func main() {
 
 	// block forever
 	for {
-		evt := <-eventChan
-		fmt.Printf("got event %s\n", evt)
+		<-eventChan
+		//fmt.Printf("got event %s\n", evt)
 	}
 }

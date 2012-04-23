@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"encoding/json"
+	"time"
 )
 
 const (
@@ -178,10 +179,19 @@ func (agent *Agent) Start() EventChannel {
 	// start reading file
 	go func() {
 		for !agent.Stopped {
+			if agent.CaptureFile == nil {
+				time.Sleep(time.Millisecond * 1000)
+				agent.OpenCaptureFile()
+				continue
+			}
+			
 			reader := bufio.NewReader(agent.CaptureFile)
 			line, isPrefix, err := reader.ReadLine()
 			if err != nil {
-				log.Fatalf("Error reading capture file: %s\n", err)
+				agent.Logger.Err(fmt.Sprintf("Error reading capture file: %s\n", err))
+				time.Sleep(time.Millisecond * 1000)
+				agent.CloseCaptureFile()
+				agent.OpenCaptureFile()
 				continue
 			}
 
@@ -288,7 +298,7 @@ func (agent *Agent) OpenCaptureFile() {
 	// TODO: check if module is loaded
 
 	if err != nil {
-		log.Fatalf("Error opening capture file for reading: %s\n", err)
+		agent.Logger.Err(fmt.Sprintf("Error opening capture file for reading: %s\n", err))
 	}
 }
 
@@ -338,7 +348,7 @@ func (agent *Agent) ParseHoneEventLine(lineBytes []byte) *CaptureEvent {
 			parseSuccess = true
 		}
 
-		if parseSuccess && eventType == "EXEC" {
+		if evt.TGID != 0 && parseSuccess && eventType == "EXEC" {
 			evt.Executable = matches[6]
 			evt.Args = matches[7]
 
@@ -360,10 +370,18 @@ func (agent *Agent) ParseHoneEventLine(lineBytes []byte) *CaptureEvent {
 		}
 		
 		evt.Direction = matches[1]
-		evt.Sockfd, _ = strconv.ParseUint(matches[2], 16, 0)
 		evt.Proto = matches[3]
 		evt.Src = matches[4]
 		evt.Dst = matches[5]
+
+		fd, err := strconv.ParseUint(matches[2], 16, 0)
+		if err == nil {
+			evt.Sockfd = fd
+			parseSuccess = true
+		} else {
+			fmt.Printf("Failed to parse sockfd %s: %s\n", matches[2], err)
+			parseSuccess = false
+		}
 
 		evtlen, err := strconv.ParseUint(matches[6], 10, 0)
 		if err == nil {
@@ -371,6 +389,7 @@ func (agent *Agent) ParseHoneEventLine(lineBytes []byte) *CaptureEvent {
 			parseSuccess = true
 		} else {
 			fmt.Printf("Failed to parse length %s: %s\n", matches[6], err)
+			parseSuccess = false
 		}
 		
 	case "SOCK":
@@ -471,7 +490,6 @@ func (agent *Agent) FillInEvent(evt *CaptureEvent) {
 			if parentProc != nil {
 				evt.Executable = parentProc.Executable
 				evt.Args = parentProc.Args
-				fmt.Println("found parent proc")
 			} else {
 				//fmt.Printf("failed to find parent proc info in fork\n")
 			}
@@ -491,11 +509,11 @@ func parseInt(s string) int {
 func (evt *CaptureEvent) String() string {
 	switch evt.Type {
 	case "PAKT":
-		return fmt.Sprintf("[%d] %s %s %s -> %s %d\n", evt.PID, string(evt.Type), evt.Proto, evt.Src, evt.Dst, evt.Len)
+		return fmt.Sprintf("[%d] %s %s %s -> %s %d", evt.PID, string(evt.Type), evt.Proto, evt.Src, evt.Dst, evt.Len)
 	case "FORK", "EXIT", "EXEC":
-		return fmt.Sprintf("[%d] %s (%s)\n", evt.PID, string(evt.Type), evt.Args)
+		return fmt.Sprintf("[%d] %s (%s)", evt.PID, string(evt.Type), evt.Args)
 	case "SOCK":
-		return fmt.Sprintf("[%d] %s %s %s %s -> %s %d\n", evt.PID, string(evt.Type), string(evt.Direction), evt.Proto, evt.Src, evt.Dst, evt.Len)
+		return fmt.Sprintf("[%d] %s %s %s %s -> %s %d", evt.PID, string(evt.Type), string(evt.Direction), evt.Proto, evt.Src, evt.Dst, evt.Len)
 	}
 
 	return fmt.Sprintf("[%d] %s", evt.PID, string(evt.Type))
