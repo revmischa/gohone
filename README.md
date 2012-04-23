@@ -13,9 +13,9 @@ agent.go collects events emitted from the Hone kernel module and streams them at
 ### Install the honeevent kernel module:
 ```
 git clone https://github.com/HoneProject/Linux-Sensor.git honeevent
-cd honeevent
+cd honeevent/src
 make && sudo make install
-sudo modprobe honeevent
+sudo /sbin/depmod -a && sudo modprobe honeevent
 ```
 
 ### Go:
