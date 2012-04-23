@@ -33,8 +33,8 @@ type CaptureEvent struct {
 
 	CaptureTimeDelta float64
 
-	ConnectionState rune
-	Direction       rune
+	ConnectionState string
+	Direction       string
 	Sockfd          uint64
 	Proto           string
 	Src             string
@@ -101,7 +101,7 @@ func NewAgent(serverAddr string, serverPort uint) *Agent {
 	// initialization
 	agent.SockEvents = make(map[uint64]*CaptureEvent)
 	agent.ExecEvents = make(map[int]*CaptureEvent)
-	agent.ConnectEventChan = make(chan bool)
+	agent.ConnectEventChan = make(chan bool, 1)
 	agent.TGID = os.Getpid() // trust me here
 	
 	logger, err := syslog.New(syslog.LOG_DEBUG, "hone-agent")
@@ -218,6 +218,7 @@ func (agent *Agent) Run() {
 }
 
 func (agent *Agent) Stop() {
+	agent.Logger.Debug("Stopping agent")
 	agent.Stopped = true
 	agent.CloseConnection()
 }
@@ -358,7 +359,7 @@ func (agent *Agent) ParseHoneEventLine(lineBytes []byte) *CaptureEvent {
 			return nil
 		}
 		
-		evt.Direction = rune(matches[1][0])
+		evt.Direction = matches[1]
 		evt.Sockfd, _ = strconv.ParseUint(matches[2], 16, 0)
 		evt.Proto = matches[3]
 		evt.Src = matches[4]
@@ -378,7 +379,7 @@ func (agent *Agent) ParseHoneEventLine(lineBytes []byte) *CaptureEvent {
 		matches := re.FindStringSubmatch(line)
 
 		if len(matches) == 8 {
-			evt.Direction = rune(matches[1][0])
+			evt.ConnectionState = matches[1]
 			evt.Sockfd, _ = strconv.ParseUint(matches[7], 16, 0)
 
 			evt.PID = parseInt(matches[2])
@@ -432,14 +433,25 @@ func (agent *Agent) FillInEvent(evt *CaptureEvent) {
 		// find last sock event of matching sockfd
 		sockEvt := agent.SockEvents[evt.Sockfd]
 		if sockEvt != nil {
-			evt.PID = sockEvt.PID
+			evt.PID  = sockEvt.PID
 			evt.PPID = sockEvt.PPID
 			evt.TGID = sockEvt.TGID
-			evt.UID = sockEvt.UID
-			evt.GID = sockEvt.GID
-			evt.Src = sockEvt.Src
-			evt.Dst = sockEvt.Dst
-			evt.Proto = sockEvt.Proto
+			evt.UID  = sockEvt.UID
+			evt.GID  = sockEvt.GID
+
+			// wouldn't count on these
+			if len(evt.Src) == 0 {
+				evt.Src = sockEvt.Src
+			}
+			if len(evt.Dst) == 0 {
+				evt.Dst = sockEvt.Dst
+			}
+			if len(evt.Proto) == 0 {
+				evt.Proto = sockEvt.Proto
+			}
+			if len(evt.ConnectionState) == 0 {
+				evt.ConnectionState = sockEvt.ConnectionState
+			}
 		} else {
 			//fmt.Printf("Failed to find PID for sockFD %d\n\n", evt.Sockfd)
 			// we're gonna ignore this, because we have no
