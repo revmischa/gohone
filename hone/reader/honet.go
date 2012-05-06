@@ -6,20 +6,27 @@ import (
 	"os"
 	"log"
 	"fmt"
+	"bufio"
 	"strconv"
 )
 
+const (
+	capFilePath = "/dev/honet"
+)
 
 func NewReader() hone.Reader {
 	return hone.Reader(new(Reader))
 }
 
-type Reader struct {}
+type Reader struct {	
+	// reading events from here
+	CaptureFile *os.File
+}
 
 // open kernel hone event module
-func (*Reader) OpenCaptureFile(agent *hone.Agent, capFilePath string) {
+func (reader *Reader) OpenCaptureFile() {
 	var err error
-	agent.CaptureFile, err = os.Open(capFilePath)
+	reader.CaptureFile, err = os.Open(capFilePath)
 
 	// TODO: check if module is loaded
 	
@@ -28,12 +35,43 @@ func (*Reader) OpenCaptureFile(agent *hone.Agent, capFilePath string) {
 	}
 }
 
-func (*Reader) CloseCaptureFile(agent *hone.Agent) {
-	agent.CaptureFile.Close()
+func (reader *Reader) CloseCaptureFile() {
+	reader.CaptureFile.Close()
+}
+
+func (reader *Reader) StartCapture(agent *hone.Agent) {
+	for !agent.Stopped {
+		fileReader := bufio.NewReader(reader.CaptureFile)
+		line, isPrefix, err := fileReader.ReadLine()
+		if err != nil {
+			log.Fatalf("Error reading capture file: %s\n", err)
+			continue
+		}
+
+		// partial line? means line is 4k long. not chill.
+		if isPrefix {
+			log.Panicf("Error finding end-of-line in capture")
+			continue
+		}
+
+		agent.EventCount++
+
+		// parse input
+		evt := reader.ParseHoneEventLine(agent, line)
+		if evt == nil {
+			continue
+		}
+
+		// success
+		agent.DispatchEvent(evt)
+	}
+
+	reader.CloseCaptureFile()
+
 }
 
 // parses a line from /dev/honet into a CaptureEvent
-func (*Reader) ParseHoneEventLine(agent *hone.Agent, lineBytes []byte) *hone.CaptureEvent {
+func (reader *Reader) ParseHoneEventLine(agent *hone.Agent, lineBytes []byte) *hone.CaptureEvent {
 	line := string(lineBytes)
 
 	parseSuccess := false

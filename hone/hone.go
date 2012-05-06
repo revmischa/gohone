@@ -1,7 +1,6 @@
 package hone
 
 import (
-	"bufio"
 	"fmt"
 	"log"
 	"log/syslog"
@@ -11,10 +10,6 @@ import (
 	"encoding/json"
 )
 
-const (
-	capFilePath = "/dev/honet"
-)
-
 // receiver of capture events
 type EventChannel chan *CaptureEvent
 
@@ -22,8 +17,9 @@ type CaptureEventType string
 
 // different hone event input modules
 type Reader interface {
-	OpenCaptureFile(*Agent, string)
-	CloseCaptureFile(*Agent)
+	OpenCaptureFile()
+	CloseCaptureFile()
+	StartCapture(*Agent)
 	ParseHoneEventLine(*Agent, []byte) *CaptureEvent
 }
 
@@ -65,9 +61,6 @@ type Agent struct {
 	EventReader Reader
 	
 	Logger *syslog.Writer
-	
-	// reading events from here
-	CaptureFile *os.File
 
 	// event dispatcher
 	EventChan EventChannel
@@ -176,7 +169,7 @@ func (agent *Agent) Start() EventChannel {
 	}()
 
 	// open capture
-	agent.EventReader.OpenCaptureFile(agent, capFilePath)
+	agent.EventReader.OpenCaptureFile()
 
 	// open client connection
 	go agent.Connect()
@@ -186,35 +179,7 @@ func (agent *Agent) Start() EventChannel {
 	agent.EventChan = make(EventChannel)
 
 	// start reading file
-	go func() {
-		for !agent.Stopped {
-			reader := bufio.NewReader(agent.CaptureFile)
-			line, isPrefix, err := reader.ReadLine()
-			if err != nil {
-				log.Fatalf("Error reading capture file: %s\n", err)
-				continue
-			}
-
-			// partial line? means line is 4k long. not chill.
-			if isPrefix {
-				log.Panicf("Error finding end-of-line in capture")
-				continue
-			}
-
-			agent.EventCount++
-
-			// parse input
-			evt := agent.EventReader.ParseHoneEventLine(agent, line)
-			if evt == nil {
-				continue
-			}
-
-			// success
-			agent.eventChan <- evt
-		}
-
-		agent.EventReader.CloseCaptureFile(agent)
-	}()
+	go agent.EventReader.StartCapture(agent);
 
 	return agent.EventChan
 }
@@ -266,6 +231,10 @@ func (agent *Agent) handleEvent(evt *CaptureEvent) {
 			agent.EventChan <- evt
 		}()
 	}
+}
+
+func (agent *Agent) DispatchEvent(evt *CaptureEvent) {
+	agent.eventChan <- evt
 }
 
 func (agent *Agent) SendEventToServer(evt *CaptureEvent) {
