@@ -22,8 +22,9 @@ func main() {
 	}
 
 	// command-line flags
-	serverAddr := flag.String("server", "", "Destination server address")
-	serverPort := flag.Uint("port", 7100, "Destination server port")
+	serverAddr   := flag.String("server", "", "Destination server address")
+	serverPort   := flag.Uint("port", 7100, "Destination server port")
+	sourceModule := flag.String("source", "ntar", "Hone event source (ntar, honet)")
 	flag.Parse()
 
 	if len(*serverAddr) == 0 {
@@ -31,7 +32,16 @@ func main() {
 	}
 
 	// create agent
-	reader := honet.NewReader()
+	var reader hone.Reader
+	switch (*sourceModule) {
+	case "ntar":
+		reader = ntar.NewReader()
+	case "honet"
+		reader = honet.NewReader()
+	default:
+		log.Fatalf("Unknown source module %s\n")
+	}
+	
 	agent := hone.NewAgent(*serverAddr, *serverPort, reader)
 
 	cleanup := func() {
