@@ -1,7 +1,7 @@
 package honet
 
 import (
-	"../../hone"
+	"hone"
 	"regexp"
 	"os"
 	"log"

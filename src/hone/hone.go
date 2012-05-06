@@ -1,13 +1,13 @@
 package hone
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/syslog"
 	"net"
 	"os"
 	"strconv"
-	"encoding/json"
 )
 
 // receiver of capture events
@@ -20,12 +20,11 @@ type Reader interface {
 	OpenCaptureFile()
 	CloseCaptureFile()
 	StartCapture(*Agent)
-	ParseHoneEventLine(*Agent, []byte) *CaptureEvent
 }
 
 // a capture event
 type CaptureEvent struct {
-	Type   CaptureEventType
+	Type CaptureEventType
 
 	// raw event data
 	// (disabled)
@@ -59,7 +58,7 @@ type CaptureEvent struct {
 type Agent struct {
 	// handler for reading hone events
 	EventReader Reader
-	
+
 	Logger *syslog.Writer
 
 	// event dispatcher
@@ -72,8 +71,8 @@ type Agent struct {
 	HostGUID string
 
 	// state
-	Stopped     bool
-	EventCount  uint64
+	Stopped    bool
+	EventCount uint64
 
 	// client connection state
 	ServerAddress     string
@@ -101,12 +100,12 @@ func NewAgent(serverAddr string, serverPort uint, evtReader Reader) *Agent {
 	agent := new(Agent)
 
 	// initialization
-	agent.EventReader = evtReader;
+	agent.EventReader = evtReader
 	agent.SockEvents = make(map[uint64]*CaptureEvent)
 	agent.ExecEvents = make(map[int]*CaptureEvent)
 	agent.ConnectEventChan = make(chan bool, 1)
 	agent.TGID = os.Getpid() // trust me here
-	
+
 	logger, err := syslog.New(syslog.LOG_DEBUG, "hone-agent")
 	if err != nil {
 		log.Panicf("Error connecting to syslog: %s\n", err)
@@ -179,7 +178,7 @@ func (agent *Agent) Start() EventChannel {
 	agent.EventChan = make(EventChannel)
 
 	// start reading file
-	go agent.EventReader.StartCapture(agent);
+	go agent.EventReader.StartCapture(agent)
 
 	return agent.EventChan
 }
@@ -259,7 +258,6 @@ func (agent *Agent) SendEventToServer(evt *CaptureEvent) {
 	}
 }
 
-
 // fills in missing data if we have it lying around
 func (agent *Agent) FillInEvent(evt *CaptureEvent) {
 	if evt.Sockfd != 0 {
@@ -267,11 +265,11 @@ func (agent *Agent) FillInEvent(evt *CaptureEvent) {
 		// find last sock event of matching sockfd
 		sockEvt := agent.SockEvents[evt.Sockfd]
 		if sockEvt != nil {
-			evt.PID  = sockEvt.PID
+			evt.PID = sockEvt.PID
 			evt.PPID = sockEvt.PPID
 			evt.TGID = sockEvt.TGID
-			evt.UID  = sockEvt.UID
-			evt.GID  = sockEvt.GID
+			evt.UID = sockEvt.UID
+			evt.GID = sockEvt.GID
 
 			// wouldn't count on these
 			if len(evt.Src) == 0 {
@@ -292,7 +290,7 @@ func (agent *Agent) FillInEvent(evt *CaptureEvent) {
 			// mapping for the process yet
 		}
 	}
-	
+
 	// attempt to find process info
 	if evt.TGID != 0 {
 		procInfo := agent.ExecEvents[evt.TGID]

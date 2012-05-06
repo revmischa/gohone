@@ -1,15 +1,16 @@
 package main
 
 import (
-	"./hone"
 	"flag"
 	"fmt"
+	"hone"
+	"hone/reader/honet"
+	"hone/reader/ntar"
 	"log"
 	"log/syslog"
 	"os"
 	"os/signal"
 	"syscall"
-	"./hone/reader"
 )
 
 var logger *syslog.Writer
@@ -22,8 +23,8 @@ func main() {
 	}
 
 	// command-line flags
-	serverAddr   := flag.String("server", "", "Destination server address")
-	serverPort   := flag.Uint("port", 7100, "Destination server port")
+	serverAddr := flag.String("server", "", "Destination server address")
+	serverPort := flag.Uint("port", 7100, "Destination server port")
 	sourceModule := flag.String("source", "ntar", "Hone event source (ntar, honet)")
 	flag.Parse()
 
@@ -33,15 +34,15 @@ func main() {
 
 	// create agent
 	var reader hone.Reader
-	switch (*sourceModule) {
+	switch *sourceModule {
 	case "ntar":
 		reader = ntar.NewReader()
-	case "honet"
+	case "honet":
 		reader = honet.NewReader()
 	default:
 		log.Fatalf("Unknown source module %s\n")
 	}
-	
+
 	agent := hone.NewAgent(*serverAddr, *serverPort, reader)
 
 	cleanup := func() {

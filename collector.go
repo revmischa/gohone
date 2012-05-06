@@ -1,12 +1,14 @@
 package main
 
+/*
 import (
-	"./hone"
+	"hone"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 )
+
 
 func main() {
 	// create collector
@@ -30,3 +32,4 @@ func main() {
 	// block forever
 	select {}
 }
+*/
