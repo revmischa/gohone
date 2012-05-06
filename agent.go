@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"./hone/reader"
 )
 
 var logger *syslog.Writer
@@ -30,7 +31,8 @@ func main() {
 	}
 
 	// create agent
-	agent := hone.NewAgent(*serverAddr, *serverPort)
+	reader := honet.NewReader()
+	agent := hone.NewAgent(*serverAddr, *serverPort, reader)
 
 	cleanup := func() {
 		logger.Debug("Cleaning up and exiting")

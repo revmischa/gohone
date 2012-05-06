@@ -7,7 +7,6 @@ import (
 	"log/syslog"
 	"net"
 	"os"
-	"regexp"
 	"strconv"
 	"encoding/json"
 )
@@ -20,6 +19,13 @@ const (
 type EventChannel chan *CaptureEvent
 
 type CaptureEventType string
+
+// different hone event input modules
+type Reader interface {
+	OpenCaptureFile(*Agent, string)
+	CloseCaptureFile(*Agent)
+	ParseHoneEventLine(*Agent, []byte) *CaptureEvent
+}
 
 // a capture event
 type CaptureEvent struct {
@@ -55,6 +61,9 @@ type CaptureEvent struct {
 
 // class that reads and dispatches capture events
 type Agent struct {
+	// handler for reading hone events
+	EventReader Reader
+	
 	Logger *syslog.Writer
 	
 	// reading events from here
@@ -95,10 +104,11 @@ type Agent struct {
 	connectLastEventCount uint64
 }
 
-func NewAgent(serverAddr string, serverPort uint) *Agent {
+func NewAgent(serverAddr string, serverPort uint, evtReader Reader) *Agent {
 	agent := new(Agent)
 
 	// initialization
+	agent.EventReader = evtReader;
 	agent.SockEvents = make(map[uint64]*CaptureEvent)
 	agent.ExecEvents = make(map[int]*CaptureEvent)
 	agent.ConnectEventChan = make(chan bool, 1)
@@ -166,7 +176,7 @@ func (agent *Agent) Start() EventChannel {
 	}()
 
 	// open capture
-	agent.OpenCaptureFile()
+	agent.EventReader.OpenCaptureFile(agent, capFilePath)
 
 	// open client connection
 	go agent.Connect()
@@ -194,7 +204,7 @@ func (agent *Agent) Start() EventChannel {
 			agent.EventCount++
 
 			// parse input
-			evt := agent.ParseHoneEventLine(line)
+			evt := agent.EventReader.ParseHoneEventLine(agent, line)
 			if evt == nil {
 				continue
 			}
@@ -203,7 +213,7 @@ func (agent *Agent) Start() EventChannel {
 			agent.eventChan <- evt
 		}
 
-		agent.CloseCaptureFile()
+		agent.EventReader.CloseCaptureFile(agent)
 	}()
 
 	return agent.EventChan
@@ -280,151 +290,6 @@ func (agent *Agent) SendEventToServer(evt *CaptureEvent) {
 	}
 }
 
-// open kernel hone event module
-func (agent *Agent) OpenCaptureFile() {
-	var err error
-	agent.CaptureFile, err = os.Open(capFilePath)
-
-	// TODO: check if module is loaded
-
-	if err != nil {
-		log.Fatalf("Error opening capture file for reading: %s\n", err)
-	}
-}
-
-func (agent *Agent) CloseCaptureFile() {
-	agent.CaptureFile.Close()
-}
-
-// parses a line from /dev/honet into a CaptureEvent
-func (agent *Agent) ParseHoneEventLine(lineBytes []byte) *CaptureEvent {
-	line := string(lineBytes)
-
-	parseSuccess := false
-
-	//log.Printf("line: %s\n", line)
-
-	// parse timestamp and event type
-	var delta float64
-	var eventType CaptureEventType
-	parsed, err := fmt.Sscanf(line, "%f %s", &delta, &eventType)
-
-	if err != nil || parsed != 2 {
-		if agent.EventCount > 10 {
-			// first few lines might be incomplete
-			log.Printf("Failed to parse line '%s': %s\n", line, err)
-		}
-		return nil
-	}
-	
-	// build event
-	evt := new(CaptureEvent)
-	evt.CaptureTimeDelta = delta
-	
-	// handle event types
-	procSpec := "(\\d+) (\\d+) (\\d+) (\\d+) (\\d+)"
-	switch eventType {
-	case "EXEC", "EXIT", "FORK":
-		// process event
-		re := regexp.MustCompile(procSpec + "(?: \"([^\"]+)\" (.+))?")
-		matches := re.FindStringSubmatch(line)
-
-		if len(matches) >= 6 {
-			evt.PID = parseInt(matches[1])
-			evt.PPID = parseInt(matches[2])
-			evt.TGID = parseInt(matches[3])
-			evt.UID = parseInt(matches[4])
-			evt.GID = parseInt(matches[5])
-			parseSuccess = true
-		}
-
-		if parseSuccess && eventType == "EXEC" {
-			evt.Executable = matches[6]
-			evt.Args = matches[7]
-
-			agent.ExecEvents[evt.TGID] = evt
-		}
-		
-		if parseSuccess && eventType == "EXIT" {
-			delete(agent.ExecEvents, evt.TGID)
-		}
-
-	case "PAKT":
-		// packet
-		re := regexp.MustCompile("([IO]) ([A-Fa-f0-9]+) (\\S+) (\\S+) -> (\\S+) (\\d+)")
-		matches := re.FindStringSubmatch(line)
-
-		if len(matches) != 7 {
-			fmt.Printf("failed to parse PAKT evt '%s'\n", line)
-			return nil
-		}
-		
-		evt.Direction = matches[1]
-		evt.Sockfd, _ = strconv.ParseUint(matches[2], 16, 0)
-		evt.Proto = matches[3]
-		evt.Src = matches[4]
-		evt.Dst = matches[5]
-
-		evtlen, err := strconv.ParseUint(matches[6], 10, 0)
-		if err == nil {
-			evt.Len = evtlen
-			parseSuccess = true
-		} else {
-			fmt.Printf("Failed to parse length %s: %s\n", matches[6], err)
-		}
-		
-	case "SOCK":
-		// socket
-		re := regexp.MustCompile("([CO]) " + procSpec + " ([A-Fa-f0-9]+)")
-		matches := re.FindStringSubmatch(line)
-
-		if len(matches) == 8 {
-			evt.ConnectionState = matches[1]
-			evt.Sockfd, _ = strconv.ParseUint(matches[7], 16, 0)
-
-			evt.PID = parseInt(matches[2])
-			evt.PPID = parseInt(matches[3])
-			evt.TGID = parseInt(matches[4])
-			evt.UID = parseInt(matches[5])
-			evt.GID = parseInt(matches[6])
-
-			if evt.PID != 0 && evt.Sockfd != 0 {
-				parseSuccess = true
-				agent.SockEvents[evt.Sockfd] = evt
-			} else {
-				fmt.Printf("Failed to find PID/sockfd from SOCK\n");
-			}
-		} else {
-			fmt.Printf("Failed to parse SOCK event: '%s'\n", line)
-		}
-
-	case "HEAD":
-		// capture header, host GUID
-		_, err := fmt.Sscanf(line, "%f %s %s", &delta, &eventType, &evt.HostGUID)
-		if err != nil {
-			log.Printf("Failed to parse HEAD event: %s\n", err)
-		} else {
-			parseSuccess = true
-			agent.LastHeadEvent = evt
-			agent.HostGUID = evt.HostGUID
-		}
-
-	default:
-		if agent.EventCount > 10 {
-			log.Printf("unhandled hone event type: %s\n", eventType)
-		}
-	}
-
-	if parseSuccess {
-		// event is chill
-		//evt.Raw = lineBytes
-		evt.Type = eventType
-		agent.FillInEvent(evt)
-		return evt
-	}
-
-	return nil
-}
 
 // fills in missing data if we have it lying around
 func (agent *Agent) FillInEvent(evt *CaptureEvent) {
@@ -477,15 +342,6 @@ func (agent *Agent) FillInEvent(evt *CaptureEvent) {
 			}
 		}
 	}
-}
-
-func parseInt(s string) int {
-	res, err := strconv.ParseInt(s, 10, 0)
-	if err != nil {
-		log.Printf("failed to convert '%s' to int\n", s)
-	}
-
-	return int(res)
 }
 
 func (evt *CaptureEvent) String() string {
