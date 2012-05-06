@@ -43,6 +43,6 @@ func (section *Section) Destroy() {
 		return
 	}
 
-	C.ntar_close_section(*section.Handle)
+	C.ntar_close_section(unsafe.Pointer(*section.Handle))
 	C.free(unsafe.Pointer(section.Handle))
 }

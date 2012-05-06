@@ -32,7 +32,7 @@ func (block *Block) Destroy() {
 	}
 
 	log.Printf("Closing block handle %#v\n", block.Handle)
-	C.ntar_close_block(*block.Handle)
+	C.ntar_close_block(unsafe.Pointer(*block.Handle))
 	C.free(unsafe.Pointer(block.Handle))
 
 	block.Handle = nil
