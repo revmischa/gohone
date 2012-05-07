@@ -1,9 +1,12 @@
 package ntar
 
-// #cgo CFLAGS: -I/home/bobo/dev/ntar
-// #cgo LDFLAGS: -lntar
-// #include <stdlib.h>
-// #include <ntar.h>
+/*
+ #cgo CFLAGS: -I/home/bobo/dev/ntar
+ #cgo LDFLAGS: -lntar
+ 
+ #include <ntar.h>
+ #include <stdlib.h>
+*/
 import "C"
 
 import (
@@ -11,7 +14,7 @@ import (
 	"unsafe"
 )
 
-type SectionHandle **C.ntar_section_handle
+type SectionHandle *C.ntar_section_handle
 
 type Section struct {
 	Handle SectionHandle
@@ -20,7 +23,7 @@ type Section struct {
 func NewSection() *Section {
 	section := new(Section)
 
-	handle := new(*C.ntar_section_handle)
+	var handle SectionHandle
 	section.Handle = handle
 
 	return section
@@ -29,7 +32,7 @@ func NewSection() *Section {
 func (section *Section) GetNextBlock() *Block {
 	block := NewBlock()
 
-	ret := C.int(C.ntar_get_next_block(*section.Handle, block.Handle))
+	ret := C.int(C.ntar_get_next_block(section.Handle, (**C.ntar_block_handle)(unsafe.Pointer(&block.Handle))))
 	if ret != C.int(C.NTAR_SUCCESS) {
 		log.Printf("got next block failed = %d\n", ret)
 		return nil
@@ -43,6 +46,5 @@ func (section *Section) Destroy() {
 		return
 	}
 
-	C.ntar_close_section(unsafe.Pointer(*section.Handle))
-	C.free(unsafe.Pointer(section.Handle))
+	C.ntar_close_section(section.Handle)
 }

@@ -16,10 +16,10 @@ const (
 	capFilePath = "/dev/hone"
 )
 
-type FileHandle **C.ntar_file_handle
+type FileHandle *C.ntar_file_handle
 
 type Handle struct {
-	CaptureFile FileHandle
+	CaptureFile *C.ntar_file_handle
 }
 
 func NewHandle() *Handle {
@@ -30,29 +30,29 @@ func NewHandle() *Handle {
 func (handle *Handle) GetNextSection() *Section {
 	section := NewSection()
 
-	ret := C.int(C.ntar_get_next_section(*handle.CaptureFile, section.Handle))
+	ret := C.int(C.ntar_get_next_section(handle.CaptureFile, (**C.ntar_section_handle)(unsafe.Pointer(&section.Handle))))
 	if ret != C.int(C.NTAR_SUCCESS) {
 		log.Printf("got next section failed = %d\n", ret)
+		handle.Close()
 		return nil
 	}
 
 	return section
 }
 
-func (handle *Handle) CloseHandle() {
+func (handle *Handle) Close() {
 	if handle.CaptureFile == nil {
 		return
 	}
 
-	C.ntar_close(*handle.CaptureFile)
-	//	C.free(unsafe.Pointer(*handle.CaptureFile))
+	C.ntar_close(handle.CaptureFile)
+	C.free(unsafe.Pointer(&handle.CaptureFile))
 
 	handle.CaptureFile = nil
 }
 
 func (handle *Handle) Open() int {
-	handle.CloseHandle()
-	fh := new(*C.ntar_file_handle)
+	var fh FileHandle
 	handle.CaptureFile = fh
 
 	fileNameC := C.CString(capFilePath)
@@ -60,7 +60,7 @@ func (handle *Handle) Open() int {
 	flagsC := C.CString("r")
 	defer C.free(unsafe.Pointer(flagsC))
 
-	ret := int(C.ntar_open(fileNameC, flagsC, fh))
+	ret := int(C.ntar_open(fileNameC, flagsC, (**C.ntar_file_handle)(unsafe.Pointer(&handle.CaptureFile))))
 	if ret != C.NTAR_SUCCESS {
 		log.Fatalf("Failed to open %s, ret=%d\n", capFilePath, ret)
 	}
