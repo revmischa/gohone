@@ -61,9 +61,9 @@ func (reader *Reader) parseBlock(block *ntar.Block, agent *hone.Agent) {
 	case *ntar.ProcessEvent:
 		log.Println("Process event")
 	case *ntar.PacketEvent:
-		log.Println("Got packet event: ", event.Length())
+		log.Println("Got packet event: ", event.ConnectionID())
 	case *ntar.ConnectionEvent:
-		log.Println("Got connection event", event.ProcessID())
+		log.Println("Got connection event", event.ProcessID(), event.ConnectionID())
 	default:
 		log.Println("Got unknown event: ", event)
 	}
