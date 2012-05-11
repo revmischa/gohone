@@ -6,12 +6,6 @@ import (
 	"log"
 )
 
-const (
-	PROCESS_EVENT_TYPE = 0x00000101
-	CONNECTION_EVENT_TYPE = 0x00000102
-	ENHANCED_PACKET_TYPE = 0x00000006
-)
-
 type BlockChannel chan *ntar.Block
 
 func NewReader() hone.Reader {
@@ -56,27 +50,22 @@ func (reader *Reader) StartCapture(agent *hone.Agent) {
 func (reader *Reader) parseBlock(block *ntar.Block, agent *hone.Agent) {
 	defer block.Destroy()
 	
-	// try to get block type
-	blockType, success := block.BlockType()
+	data, success := block.BlockEvent()
 	if ! success {
 		return
 	}
 
-	/*
-	blockData, success := block.BlockData()
-	if ! success {
-		return
-	}
-	log.Printf("blockdata.len=%#v\n", blockData.Length)
-	*/
-		
-	switch (blockType) {
-	case PROCESS_EVENT_TYPE:	
-		log.Println("Got process event")
-	case CONNECTION_EVENT_TYPE:
-		log.Println("Got connection event")
-	case ENHANCED_PACKET_TYPE:
-		log.Println("Got packet event")
+	//defer data.Destroy()
+
+	switch event := data.(type) {
+	case *ntar.ProcessEvent:
+		log.Println("Process event")
+	case *ntar.PacketEvent:
+		log.Println("Got packet event: ", event.Length())
+	case *ntar.ConnectionEvent:
+		log.Println("Got connection event", event.ProcessID())
+	default:
+		log.Println("Got unknown event: ", event)
 	}
 }
 

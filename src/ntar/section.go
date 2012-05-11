@@ -3,7 +3,7 @@ package ntar
 /*
  #cgo CFLAGS: -I/home/bobo/dev/ntar
  #cgo LDFLAGS: -lntar
- 
+
  #include <ntar.h>
  #include <stdlib.h>
 */
